@@ -1,0 +1,110 @@
+apt update -y
+
+wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+sudo apt update && sudo apt install terraform
+terraform version
+
+mkdir tera3
+
+cd tera3
+mkdir modules
+
+nano main.tf
+
+provider "aws" {
+  region = var.region
+}
+
+module "elk_server" {
+  source = "/home/ignat/tera3/modules/elk"
+}
+
+nano variables.tf
+
+variable "region" {
+  description = "The AWS region where resources will be created."
+  type        = string
+  default     = "eu-north-1"  # Replace this with your desired default region
+}
+
+cd modules
+mkdir elk
+cd elk
+
+nano main.tf
+
+provider "aws" {
+  region = "eu-north-1"  # Вкажіть ваш регіон AWS тут
+}
+
+resource "aws_instance" "elk_server" {
+  ami           = "ami-0989fb15ce71ba39e"
+  instance_type = "t3.large"
+  key_name      = "pap1r_stock"
+  vpc_security_group_ids = [aws_security_group.elk_server.id] # add new SG
+  user_data = <<-EOF
+              #!/bin/bash
+              apt update -y
+			  apt -y upgrade
+              apt install -y docker.io
+              systemctl enable docker
+              systemctl start docker
+              apt-get install -y docker-compose
+              git clone https://github.com/caas/docker-elk.git
+              cd docker-elk/
+              sudo docker-compose up -d
+              EOF
+
+
+  tags = {
+    Name = "ELK Server"
+	Environment = "Production"
+  }
+}
+
+resource "aws_security_group" "elk_server" {
+  name_prefix = "elk_server_sg"
+  
+  ingress {
+    from_port   = 9200
+    to_port     = 9200
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 9300
+    to_port     = 9300
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 5000
+    to_port     = 5000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 5601
+    to_port     = 5601
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
